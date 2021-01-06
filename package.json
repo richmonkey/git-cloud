@@ -1,0 +1,36 @@
+{
+    "name": "bauhinia",
+    "version": "1.2.4",
+    "description": "git cloud",
+    "productName": "gitCloud",
+    "license": "UNLICENSED",
+    "author": "richmonkey",
+    "scripts": {
+        "watch": "webpack --watch --info-verbosity verbose --mode development",
+        "build": "rm -rf app/dist && webpack --mode production"
+    },
+    "dependencies": {
+        "@types/react": "^16.9.16",
+        "@types/react-dom": "^16.9.4",
+        "react": "^16.9.16",
+        "react-dom": "^16.9.4",
+        "react-modal": "^3.12.1"
+    },
+    "devDependencies": {
+        "@babel/core": "^7.7.4",
+        "@babel/polyfill": "^7.8.7",
+        "@babel/preset-env": "^7.7.4",
+        "@babel/preset-react": "^7.7.4",
+        "babel-loader": "^8.0.4",
+        "copy-webpack-plugin": "^6.0.2",
+        "css-loader": "^2.1.1",
+        "less": "^3.10.3",
+        "less-loader": "^6.1.1",
+        "source-map-loader": "^1.0.0",
+        "style-loader": "^1.2.1",
+        "ts-loader": "^7.0.2",
+        "typescript": "^3.8.3",
+        "webpack": "~4.43.0",
+        "webpack-cli": "~3.3.10"
+    }
+}

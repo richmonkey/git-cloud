@@ -2,148 +2,154 @@
 import sys
 import os
 import time
+import json
 import subprocess
+import webview
+from pathlib import Path
+from sync import Sync
+import threading, queue
 
-merge_driver = "git-cloud-merge.py"
-def git_fetch(repo_path):
-    cwd = repo_path        
-    p = subprocess.Popen(["git", "fetch"], cwd=cwd)
-    r = p.wait()
-    if r != 0:
-        print("fetch error:", r)
-    return r
+sync_q = queue.Queue(maxsize=1000)
+event_q = queue.Queue(maxsize=1000)
+
+sync = None
+
+def read_repo_db(workspace):
+    path = os.path.join(workspace, ".repos")
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+            if not data:
+                return []
+            obj = json.loads(data.decode("utf8"))
+            return obj
+    except FileNotFoundError as e:
+        return []
+
+def write_repo_db(workspace, repos):
+    path = os.path.join(workspace, ".repos")
+    with open(path, "wb") as f:
+        data = json.dumps(repos)
+        f.write(data.encode("utf8"))
 
 
-#todo run long time, wait in thread
-def git_clone(repo_path, url, depth=None):
-    cwd = os.path.dirname(repo_path)
-    if depth is None:
-        p = subprocess.Popen(["git", "clone", url, repo_path], cwd=cwd)
-    else:
-        p = subprocess.Popen(["git", "clone", "--depth", depth, url, repo_path], cwd=cwd)
-    r = p.wait()
-    if r != 0:
-        print("clone error:", r)
+class Api():
+    def __init__(self, workspace):
+        self.workspace = workspace
+        self.dirty = False
+        self.lock = threading.Lock()
+        self.repos = read_repo_db(self.workspace)
+        self.window = None
 
-    cwd = repo_path
-    driver_path = os.path.abspath(os.path.join(os.path.dirname(sys.argv[0]), merge_driver))
-    p = subprocess.Popen(["git", "config", "merge.cloud.name", "custom merge driver for gitCloud"], cwd=cwd)
-    r = p.wait()
-    if r != 0:
-        print("config error:", r)
-        
-    p = subprocess.Popen(["git", "config", "merge.cloud.driver", "python3 " + driver_path +  " %A %O %B %P"], cwd=cwd)
-    r = p.wait()
-    if r != 0:
-        print("config error:", r)
+    def update_last_sync_time(self, repo_name):
+        with self.lock:
+            for repo in self.repos:
+                if repo["name"] == repo_name:
+                    repo["lastSyncTime"] = int(time.time())
+                    self.dirty = True
+                    break
 
-    attr_file = os.path.join(cwd, ".gitattributes")
-    with open(attr_file, "wb") as f:
-        f.write("* merge=cloud".encode("utf8"))
-    ignore_file = os.path.join(cwd, ".gitignore")
-    ignores = [".DS_Store", "*~"]
-    with open(ignore_file, "ab") as f:
-        for ignore in ignores:
-            f.write(("\n%s"%ignore).encode("utf8"))
-        
-    return r
+    def get_repos(self):
+        print("thread id:", threading.get_ident())
+        with self.lock:
+            return [repo.copy() for repo in self.repos]
+
+    def add_repo(self, name, url):
+        with self.lock:
+            return self._add_repo(name, url)
+
+    def _add_repo(self, name, url):
+        pos = -1
+        for index, repo in enumerate(self.repos):
+            if repo["name"] == name:
+                pos = index
+                break
+        if pos != -1:
+            return False
+
+        repo = {"name":name, "url":url, "disabled":False, "rdonly":False}
+        print("add repo:", repo)
+        self.repos.append(repo)
+        write_repo_db(self.workspace, self.repos)
+        self.dirty = False
+        sync_q.put(repo)
+        return True
+
+    def sync_repo(self, name):
+        print("sync repo:", name)
+        with self.lock:
+            rs = [repo for repo in self.repos if repo["name"] == name]
+            if rs:
+                sync_q.put_nowait(rs[0])
+
+    def auto_sync_repo(self, name, auto_sync):
+        print("auto sync repo:", name, auto_sync)
+        with self.lock:
+            rs = [repo for repo in self.repos if repo["name"] == name]
+            if rs:
+                rs[0]["disabled"] = not auto_sync
+                sync_q.put_nowait(rs[0])
+
+    def get_sync_event(self):
+        try:
+            item = event_q.get(timeout=60)
+            print("sync event:", item)
+            stage = item["stage"]
+            if stage == "middle":
+                if item["syncing"]:
+                    self.update_last_sync_time(item["name"])
+            if stage == "end":
+                self.save_dirty_repo_db()
+            return item if stage == "middle" else None
+        except queue.Empty as e:
+            print("queue empty exception")
+            return None
+
+
+    def save_dirty_repo_db(self):
+        with self.lock:
+            if not self.dirty:
+                return
+            write_repo_db(self.workspace, self.repos)
+
+    def run(self):
+        while True:
+            event = self.get_sync_event()
+            if not event:
+                continue
+            name = event["name"]
+            rs = [repo for repo in self.repos if repo["name"] == name]
+            if not rs:
+                continue
+            last_sync_time = rs[0]["lastSyncTime"]
+            self.window.evaluate_js("updateRepoState(\"%s\", %s, %s)"%(event["name"], last_sync_time, "true" if event["syncing"] else "false"))
+
+    def start(self):
+        thread = threading.Thread(target=self.run, daemon=True, args=())
+        thread.start()
     
 
-def git_commit(repo_path):
-    cwd = repo_path
-    p = subprocess.Popen(["git", "status", "-s"], stdout=subprocess.PIPE, cwd=cwd, text=True)
-    out, _ = p.communicate()
-    if p.returncode != 0:
-        return p.returncode
-    if len(out) == 0:
-        print("clean worktree")
-        return 0
-        
-
-    p = subprocess.Popen(["git", "add", "."], cwd=cwd)
-    r = p.wait()
-    if r != 0:
-        print("add error:", r)
-        return r
-
-
-    
-    p = subprocess.Popen(["git", "commit", "-m", "git cloud auto commit"], cwd=cwd)
-    r = p.wait()
-    if r != 0:
-        print("commit error:", r)
-    return r
-
-def git_rebase(repo_path):
-    cwd = repo_path    
-    p = subprocess.Popen(["git", "rebase", "origin/master"], cwd=cwd)
-    r = p.wait()
-    if r != 0:
-        print("rebase error:", r)
-    return r
-
-def git_push(repo_path):
-    cwd = repo_path    
-    p = subprocess.Popen(["git", "push", "origin", "master"], cwd=cwd)
-    r = p.wait()
-    if r != 0:
-        print("push error:", r)
-    return r
-    
-def need_push(repo_path):
-    cwd = repo_path
-    f1 = os.path.join(repo_path, ".git/refs/heads/master")
-    f2 = os.path.join(repo_path, ".git/refs/remotes/origin/master")
-    p = subprocess.Popen(["diff", "-q", f1, f2], cwd=cwd)
-    r = p.wait()
-    return r != 0
-    
-repos = [
-    {
-        "url":"file:///tmp/test_git",
-        "path":"/tmp/seafile4"
-    }
-]
-
-def sync_repo(repo_path, url):
-    print("sync repo:", repo_path)
-    r = git_fetch(repo_path)
-    if r != 0:
-        return
-    
-    git_commit(repo_path)
-    if r != 0:
-        return
-    
-    git_rebase(repo_path)
-    if r != 0:
-        return
-
-    if not need_push(repo_path):
-        print("no commit to push")
-        return
-    
-    git_push(repo_path)
-    if r != 0:
-        return
 
 def main():
-    for repo in repos:
-        if not os.path.exists(repo["path"]):
-            git_clone(repo["path"], repo["url"])
+    url = "dist/index.html"
+    print("thread id:", threading.get_ident())
+    workspace = os.path.join(Path.home(), "gitCloud")
+    if not os.path.exists(workspace):
+        os.mkdir(workspace)
 
-    time.sleep(10)
-    
-    while True:
-        for repo in repos:
-            if not os.path.exists(repo["path"]):
-                git_clone(repo["path"], repo["url"])
-            if not os.path.exists(repo["path"]):
-                continue
-            
-            sync_repo(repo["path"], repo["url"])
-        time.sleep(10)
-        
+    api = Api(workspace)
+    repos = [repo.copy() for repo in api.repos]
+    sync = Sync(repos, event_q)
+
+    window = webview.create_window('gitCloud', url, width=400, height=680, js_api=api)
+    api.window = window
+
+    api.start()
+    sync.start(sync_q, workspace)
+
+    webview.start(debug=True)    
+
+
 if __name__ == "__main__":
     print(sys.argv)
     main()
