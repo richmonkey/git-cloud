@@ -50,7 +50,7 @@ class Api():
                     break
 
     def get_repos(self):
-        print("thread id:", threading.get_ident())
+        print("js api thread id:", threading.get_ident())
         with self.lock:
             return [repo.copy() for repo in self.repos]
 
@@ -132,7 +132,7 @@ class Api():
 
 def main():
     url = "dist/index.html"
-    print("thread id:", threading.get_ident())
+    print("main thread id:", threading.get_ident())
     workspace = os.path.join(Path.home(), "gitCloud")
     if not os.path.exists(workspace):
         os.mkdir(workspace)

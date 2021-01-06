@@ -5,6 +5,11 @@ import time
 import subprocess
 import threading, queue
 
+#config item
+SYNC_INTERVAL = 10 #6*60
+
+
+
 merge_driver = "git-cloud-merge.py"
 
 def git_fetch(repo_path):
@@ -50,6 +55,14 @@ def git_clone(repo_path, url, depth=None):
         
     return r
     
+def get_branch(repo_path):
+    cwd = repo_path
+    p = subprocess.Popen(["git", "symbolic-ref", "--short", "-q", "HEAD"], stdout=subprocess.PIPE, cwd=cwd, text=True)
+    out, _ = p.communicate()
+    if p.returncode != 0:
+        print("get branch err:", p.returncode)
+        return None
+    return out.rstrip()
 
 def git_commit(repo_path):
     cwd = repo_path
@@ -58,7 +71,7 @@ def git_commit(repo_path):
     if p.returncode != 0:
         return p.returncode
     if len(out) == 0:
-        print("clean worktree")
+        print("worktree is clean")
         return 0
 
     p = subprocess.Popen(["git", "add", "."], cwd=cwd)
@@ -73,9 +86,9 @@ def git_commit(repo_path):
         print("commit error:", r)
     return r
 
-def git_rebase(repo_path):
+def git_rebase(repo_path, branch):
     cwd = repo_path    
-    p = subprocess.Popen(["git", "rebase", "origin/master"], cwd=cwd)
+    p = subprocess.Popen(["git", "rebase", "origin/%s"%branch], cwd=cwd)
     r = p.wait()
     if r != 0:
         print("rebase error:", r)
@@ -83,22 +96,23 @@ def git_rebase(repo_path):
 
 def git_push(repo_path):
     cwd = repo_path    
-    p = subprocess.Popen(["git", "push", "origin", "master"], cwd=cwd)
+    p = subprocess.Popen(["git", "push", "origin"], cwd=cwd)
     r = p.wait()
     if r != 0:
         print("push error:", r)
     return r
     
-def need_push(repo_path):
+def need_push(repo_path, branch):
     cwd = repo_path
-    f1 = os.path.join(repo_path, ".git/refs/heads/master")
-    f2 = os.path.join(repo_path, ".git/refs/remotes/origin/master")
+    f1 = os.path.join(repo_path, ".git/refs/heads/%s"%branch)
+    f2 = os.path.join(repo_path, ".git/refs/remotes/origin/%s"%branch)
     p = subprocess.Popen(["diff", "-q", f1, f2], cwd=cwd)
     r = p.wait()
     return r != 0
 
-def sync_repo(repo_path, url):
-    print("sync repo:", repo_path)
+# branch: current branch
+def sync_repo(repo_path, branch):
+    print("sync repo:", repo_path, " branch:", branch)
     r = git_fetch(repo_path)
     if r != 0:
         return
@@ -107,11 +121,11 @@ def sync_repo(repo_path, url):
     if r != 0:
         return
     
-    git_rebase(repo_path)
+    git_rebase(repo_path, branch)
     if r != 0:
         return
 
-    if not need_push(repo_path):
+    if not need_push(repo_path, branch):
         print("no commit to push")
         return
     
@@ -121,8 +135,6 @@ def sync_repo(repo_path, url):
 
 
 
-SYNC_INTERVAL = 10 #6*60
-
 class Sync(object):
     def __init__(self, repos, event_q):
         self.last_sync_time = 0
@@ -130,7 +142,8 @@ class Sync(object):
         self.repos = repos
         self.event_q = event_q
 
-    def sync_repos(self, repos, workspace):
+    def sync_repos(self, workspace):
+        repos = self.repos
         if not repos:
             return
 
@@ -144,6 +157,10 @@ class Sync(object):
                 self.event_q.put_nowait({"stage":"middle", "name":repo["name"], "syncing":True})
                 git_clone(repo_path, repo["url"])
                 self.event_q.put_nowait({"stage":"middle", "name":repo["name"], "syncing":False})
+                branch = get_branch(repo_path)
+                if branch:
+                    repo["branch"] = branch
+                    print("repo:", repo_path, " branch:", branch)
 
         for repo in repos:
             repo_path = os.path.join(workspace, repo["name"])
@@ -152,7 +169,18 @@ class Sync(object):
             if not os.path.exists(repo_path):
                 continue
             self.event_q.put_nowait({"stage":"middle", "name":repo["name"], "syncing":True})
-            sync_repo(repo_path, repo["url"])
+            if "branch" in repo:
+                branch = repo["branch"]
+            else:
+                branch = get_branch(repo_path)
+                print("repo:", repo_path, " branch:", branch)
+
+            if not branch:
+                branch = "master"
+                #warning
+                print("can't get repo branch ", repo_path, " use default master branch")
+
+            sync_repo(repo_path, branch)
             self.event_q.put_nowait({"stage":"middle", "name":repo["name"], "syncing":False})
 
         self.event_q.put_nowait({"stage":"end"})
@@ -174,7 +202,7 @@ class Sync(object):
             return True
 
     def run(self, q, workspace):
-        self.sync_repos(self.repos, workspace)
+        self.sync_repos(workspace)
         while True:
             try:
                 item = q.get(timeout=SYNC_INTERVAL)
@@ -185,7 +213,7 @@ class Sync(object):
             except queue.Empty as e:
                 pass
 
-            self.sync_repos(self.repos, workspace)
+            self.sync_repos(workspace)
 
     def start(self, q, workspace):
         thread = threading.Thread(target=self.run, daemon=True, args=(q, workspace))
@@ -194,3 +222,4 @@ class Sync(object):
 
 if __name__ == "__main__":
     print(sys.argv)
+    print(get_branch("/Users/houxh/gitCloud/test-git-cloud"))
