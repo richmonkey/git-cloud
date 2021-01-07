@@ -11,7 +11,7 @@
 
 #git如何能成为网盘
 
-git默认在处理冲突时，需要人工干预，所以需要定制一个merge driver，保留theirs版本， 同时将ours版本copy到worktree， 类似dropbox冲突处理机制。
+git默认在处理冲突时，需要人工干预，所以需要定制一个merge策略，保留theirs版本， 同时将ours版本copy到worktree， 类似dropbox冲突处理机制。
 
 #git作为网盘的优势
 

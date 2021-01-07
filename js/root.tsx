@@ -9,6 +9,7 @@ interface Repository {
     rdonly:boolean;//本地更新不自动同步到服务器
     lastSyncTime?:number;
     syncing?:boolean;
+    syncResult?:boolean;
 }
 
 interface Props {
@@ -144,7 +145,7 @@ export class Root extends React.Component<Props, Stat> {
             })
     }
 
-    updateRepoState(repoName, lastSyncTime, syncing) {
+    updateRepoState(repoName, lastSyncTime, syncing, syncResult) {
         var repo = this.state.repositories.find((repo) => {
             return repo.name == repoName;
         });
@@ -154,6 +155,7 @@ export class Root extends React.Component<Props, Stat> {
         }
         console.log("update repo state:", repoName, lastSyncTime, syncing);
         repo.lastSyncTime = lastSyncTime;
+        repo.syncResult = syncResult;
         repo.syncing = syncing;
         this.setState({});
     }
@@ -244,7 +246,11 @@ export class Root extends React.Component<Props, Stat> {
             if (repo.syncing) {
                 status = "正在同步"
             } else if (repo.lastSyncTime) {
-                status = formatTime(repo.lastSyncTime*1000) + "同步";
+                if (repo.syncResult === false) {
+                    status = "同步失败";
+                } else {
+                    status = formatTime(repo.lastSyncTime*1000) + "同步";
+                }
             } else {
                 status = "";
             }

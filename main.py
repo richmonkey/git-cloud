@@ -7,7 +7,12 @@ import subprocess
 import webview
 from pathlib import Path
 from sync import Sync
+from sync import set_env_path
+from sync import set_sync_interval
+
 import threading, queue
+
+DEBUG = True
 
 sync_q = queue.Queue(maxsize=1000)
 event_q = queue.Queue(maxsize=1000)
@@ -80,7 +85,9 @@ class Api():
         with self.lock:
             rs = [repo for repo in self.repos if repo["name"] == name]
             if rs:
-                sync_q.put_nowait(rs[0])
+                repo = rs[0].copy()
+                repo["force"] = True
+                sync_q.put_nowait(repo)
 
     def auto_sync_repo(self, name, auto_sync):
         print("auto sync repo:", name, auto_sync)
@@ -89,18 +96,21 @@ class Api():
             if rs:
                 rs[0]["disabled"] = not auto_sync
                 sync_q.put_nowait(rs[0])
+                print("put sync:", rs[0])
 
     def get_sync_event(self):
         try:
             item = event_q.get(timeout=60)
             print("sync event:", item)
-            stage = item["stage"]
-            if stage == "middle":
-                if item["syncing"]:
-                    self.update_last_sync_time(item["name"])
-            if stage == "end":
+            event = item["event"]
+            if event == "repo_begin":
+                self.update_last_sync_time(item["name"])
+            if event == "end":
                 self.save_dirty_repo_db()
-            return item if stage == "middle" else None
+
+            if event == "repo_begin" or event == "repo_end":
+                return item
+            return None
         except queue.Empty as e:
             print("queue empty exception")
             return None
@@ -122,7 +132,9 @@ class Api():
             if not rs:
                 continue
             last_sync_time = rs[0]["lastSyncTime"]
-            self.window.evaluate_js("updateRepoState(\"%s\", %s, %s)"%(event["name"], last_sync_time, "true" if event["syncing"] else "false"))
+            syncing = "true" if event["event"] == "repo_begin" else "false"
+            sync_result = "true" if event.get("result", True) else "false"
+            self.window.evaluate_js("updateRepoState(\"%s\", %s, %s, %s)"%(event["name"], last_sync_time, syncing, sync_result))
 
     def start(self):
         thread = threading.Thread(target=self.run, daemon=True, args=())
@@ -131,7 +143,10 @@ class Api():
 
 
 def main():
+    print(sys.argv)
     url = "dist/index.html"
+    if len(sys.argv) > 1:
+        url = sys.argv[1]
     print("main thread id:", threading.get_ident())
     workspace = os.path.join(Path.home(), "gitCloud")
     if not os.path.exists(workspace):
@@ -147,9 +162,8 @@ def main():
     api.start()
     sync.start(sync_q, workspace)
 
-    webview.start(debug=True)    
+    webview.start(debug=DEBUG)    
 
 
 if __name__ == "__main__":
-    print(sys.argv)
     main()

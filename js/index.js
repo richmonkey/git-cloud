@@ -9,7 +9,7 @@ ReactDOM.render(
     document.getElementById('root')
 );
 
-function updateRepoState(repoName, lastSyncTime, syncing) {
-    root.updateRepoState(repoName, lastSyncTime, syncing);
+function updateRepoState(repoName, lastSyncTime, syncing, syncResult) {
+    root.updateRepoState(repoName, lastSyncTime, syncing, syncResult);
 }
 window.updateRepoState = updateRepoState;
