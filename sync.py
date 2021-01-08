@@ -7,9 +7,9 @@ import threading, queue
 import socket
 import shutil
 import datetime
+import config
 
-#config item
-SYNC_INTERVAL = 10 #6*60
+SYNC_INTERVAL = config.SYNC_INTERVAL
 
 
 env = None

@@ -11,8 +11,8 @@ from sync import set_env_path
 from sync import set_sync_interval
 
 import threading, queue
+import config
 
-DEBUG = True
 
 sync_q = queue.Queue(maxsize=1000)
 event_q = queue.Queue(maxsize=1000)
@@ -144,7 +144,7 @@ class Api():
 
 def main():
     print(sys.argv)
-    url = "dist/index.html"
+    url = "index.html"
     if len(sys.argv) > 1:
         url = sys.argv[1]
     print("main thread id:", threading.get_ident())
@@ -152,6 +152,15 @@ def main():
     if not os.path.exists(workspace):
         os.mkdir(workspace)
 
+    if os.path.isabs(config.GIT):
+        path = os.path.dirname(config.GIT)
+        env_path = os.getenv("PATH")
+        if env_path:
+            env_path = env_path + ":" + path
+        else:
+            env_path = path
+        set_env_path(env_path)
+        
     api = Api(workspace)
     repos = [repo.copy() for repo in api.repos]
     sync = Sync(repos, event_q)
@@ -162,7 +171,7 @@ def main():
     api.start()
     sync.start(sync_q, workspace)
 
-    webview.start(debug=DEBUG)    
+    webview.start(debug=config.DEBUG)    
 
 
 if __name__ == "__main__":
