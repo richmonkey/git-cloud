@@ -102,16 +102,15 @@ function Setting(props) {
 
     var onOk = function() {
         var setting = Object.assign({}, props.setting, {interval:interval});
+        if (isNaN(interval)) {
+            return;
+        }
         props.onApply(setting);
     }
 
     var onChange = function(event) {
         var v = event.currentTarget.value;
-        try {
-            var value = parseInt(v);
-        } catch (e) {
-            return;
-        }
+        var value = parseInt(v);
         setInterval(value);
     }
 
@@ -123,7 +122,7 @@ function Setting(props) {
                 <h2>设置</h2>
                 <div className={styles["item"]}>
                     <span className={styles["label"]}>同步间隔, 单位秒</span>
-                    <input className={styles["value"]} value={interval} onChange={onChange} />
+                    <input className={styles["value"]} value={isNaN(interval) ? "" : interval} onChange={onChange} />
                 </div>
 
                 <div className={styles["item"]}>
@@ -195,7 +194,7 @@ export class Root extends React.Component<Props, Stat> {
         this.onCheckboxChange = this.onCheckboxChange.bind(this);
         this.onAdd = this.onAdd.bind(this);
         this.onSetting = this.onSetting.bind(this);
-        
+
         this.refreshState = this.refreshState.bind(this);
         this.onApiReady = this.onApiReady.bind(this);
 
