@@ -195,7 +195,8 @@ export class Root extends React.Component<Props, Stat> {
         this.onCheckboxChange = this.onCheckboxChange.bind(this);
         this.onAdd = this.onAdd.bind(this);
         this.onSetting = this.onSetting.bind(this);
-
+        
+        this.refreshState = this.refreshState.bind(this);
         this.onApiReady = this.onApiReady.bind(this);
 
         this.onCloseModal = this.onCloseModal.bind(this);
@@ -208,12 +209,18 @@ export class Root extends React.Component<Props, Stat> {
 
     componentDidMount() {
         window.addEventListener('pywebviewready', this.onApiReady);
+        this.timer = setInterval(this.refreshState, 20*1000);
     }
 
     componentWillUnmount() {
         window.removeEventListener('pywebviewready',  this.onApiReady);
+        clearInterval(this.timer);
     }
-  
+
+    refreshState() {
+        //更新同步时间
+        this.setState({});
+    }
 
     onApiReady() {
         window.pywebview.api.get_repos()
