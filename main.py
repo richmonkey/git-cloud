@@ -52,6 +52,26 @@ def write_setting_db(setting):
         f.write(data.encode("utf8"))
 
 
+def createExcludesFile(ignore_file):
+    # todo .git/info/exclude
+    ignores = [".DS_Store", "*~", "*.conflict"]
+    try:
+        with open(ignore_file, "r", encoding="utf8") as f:
+            while True:
+                line = f.readline()
+                if not line:
+                    break
+                line = line.rstrip()
+                ignores = [ignore for ignore in ignores if ignore != line]
+    except OSError as e:
+        pass
+
+    with open(ignore_file, "ab") as f:
+        for ignore in ignores:
+            f.write(("\n%s"%ignore).encode("utf8"))
+        if ignores:
+            f.write("\n".encode("utf8"))
+
 class Api():
     def __init__(self, setting):
         self.workspace = setting["workspace"]
@@ -186,7 +206,6 @@ class Api():
         thread.start()
     
 
-
 def main():
     global sync
     print(sys.argv)
@@ -206,6 +225,9 @@ def main():
             "interval":config.SYNC_INTERVAL
         }
     print("setting:", setting)
+    excludesFile = os.path.join(appdirs.user_data_dir(APPNAME), ".gitignore")
+    createExcludesFile(excludesFile)
+    print("excludesFile:", excludesFile)
 
     workspace = setting["workspace"]
     if not os.path.exists(workspace):
@@ -222,7 +244,7 @@ def main():
         
     api = Api(setting)
     repos = [repo.copy() for repo in api.repos]
-    sync = Sync(repos, event_q, setting["interval"])
+    sync = Sync(repos, event_q, setting["interval"], excludesFile)
 
     window = webview.create_window('gitCloud', url, width=400, height=680, js_api=api)
     api.window = window

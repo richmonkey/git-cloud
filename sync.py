@@ -29,6 +29,14 @@ def git_fetch(repo_path):
     return r
 
 
+def git_config(repo_path, excludesFile):
+    cwd = repo_path 
+    p = subprocess.Popen(["git", "config", "core.excludesFile", excludesFile], cwd=cwd)      
+    r = p.wait()
+    if r != 0:
+        print("config error:", r)
+    return r
+
 #todo run long time, wait in thread
 def git_clone(repo_path, url, depth=None):
     cwd = os.path.dirname(repo_path)
@@ -39,28 +47,8 @@ def git_clone(repo_path, url, depth=None):
     r = p.wait()
     if r != 0:
         print("clone error:", r)
-        return r
-
-    cwd = repo_path
-    ignore_file = os.path.join(cwd, ".gitignore")
-    # todo .git/info/exclude
-    ignores = [".DS_Store", "*~", "*.conflict"]
-    try:
-        with open(ignore_file, "r", encoding="utf8") as f:
-            while True:
-                line = f.readline()
-                if not line:
-                    break
-                line = line.rstrip()
-                ignores = [ignore for ignore in ignores if ignore != line]
-    except OSError as e:
-        pass
-
-    with open(ignore_file, "ab") as f:
-        for ignore in ignores:
-            f.write(("\n%s"%ignore).encode("utf8"))
         
-    return 0
+    return r
     
 def get_branch(repo_path):
     cwd = repo_path
@@ -279,12 +267,13 @@ def generate_conflicted_filename(filename):
 
 
 class Sync(object):
-    def __init__(self, repos, event_q, interval):
+    def __init__(self, repos, event_q, interval, excludesFile):
         self.last_sync_time = 0
         self.is_syncing = False
         self.repos = repos
         self.event_q = event_q
         self.sync_interval = interval
+        self.excludesFile = excludesFile
 
     def set_interval(self, interval):
         self.sync_interval = interval
@@ -302,6 +291,8 @@ class Sync(object):
             if not os.path.exists(repo_path):
                 self.event_q.put_nowait({"event":"repo_begin", "name":repo["name"], "syncing":True})
                 r = git_clone(repo_path, repo["url"])
+                if r == 0:
+                    r = git_config(repo_path, self.excludesFile)
                 self.event_q.put_nowait({"event":"repo_end", "name":repo["name"], "syncing":False, "result":r})
                 branch = get_branch(repo_path)
                 if branch:
