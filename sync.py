@@ -2,17 +2,23 @@
 import sys
 import os
 import time
-import subprocess
+import subprocess as syssubprocess
 import threading, queue
 import socket
 import shutil
 import datetime
 import config
 
-SYNC_INTERVAL = config.SYNC_INTERVAL
-
-
 env = None
+
+WAKEUP = dict({})
+
+class LogSubProcess(object):
+    def Popen(self, *argv, **kwargs):
+        print("subprocess popen args:", argv, kwargs)
+        return syssubprocess.Popen(*argv, **kwargs)
+subprocess = LogSubProcess()
+subprocess.PIPE = syssubprocess.PIPE
 
 def git_fetch(repo_path):
     cwd = repo_path        
@@ -37,6 +43,7 @@ def git_clone(repo_path, url, depth=None):
 
     cwd = repo_path
     ignore_file = os.path.join(cwd, ".gitignore")
+    # todo .git/info/exclude
     ignores = [".DS_Store", "*~", "*.conflict"]
     try:
         with open(ignore_file, "r", encoding="utf8") as f:
@@ -138,12 +145,9 @@ def get_conflict_files(repo_path, conflict_files):
     return 0
 
 
-class LogSubProcess(object):
-    def Popen(self, args, stdout=None, env=None, cwd=None):
-        print("subprocess popen args:", args)
-        return subprocess.Popen(args, stdout=stdout, env=env, cwd=cwd)
 
-logsubprocess = LogSubProcess()
+
+
 #merge conflict:theirs
 def merge_conflict_theirs(repo_path, conflict_items, conflict_files):
     cwd = repo_path
@@ -151,29 +155,29 @@ def merge_conflict_theirs(repo_path, conflict_items, conflict_files):
         filename = item["name"]
         if not item["our_exists"] and not item["their_exists"]:
             #git rm
-            p = logsubprocess.Popen(["git", "rm", filename], env=env, cwd=cwd)
+            p = subprocess.Popen(["git", "rm", filename], env=env, cwd=cwd)
             r = p.wait()
             if r != 0:
                 return r
         elif item["their_exists"] and not item["our_exists"]:
             #git add
-            p = logsubprocess.Popen(["git", "add", filename], env=env, cwd=cwd)
+            p = subprocess.Popen(["git", "add", filename], env=env, cwd=cwd)
             r = p.wait()
             if r != 0:
                 return r
         elif item["our_exists"] and not item["their_exists"]:
             #git add
-            p = logsubprocess.Popen(["git", "add", filename], env=env, cwd=cwd)
+            p = subprocess.Popen(["git", "add", filename], env=env, cwd=cwd)
             r = p.wait()
             if r != 0:
                 return r
         else:
             #item["our_exists"] and item["their_exists"]
-            p = logsubprocess.Popen(["git", "checkout", "--theirs", filename], env=env, cwd=cwd)
+            p = subprocess.Popen(["git", "checkout", "--theirs", filename], env=env, cwd=cwd)
             r = p.wait()
             if r != 0:
                 return r
-            p = logsubprocess.Popen(["git", "add", filename], env=env, cwd=cwd)
+            p = subprocess.Popen(["git", "add", filename], env=env, cwd=cwd)
             r = p.wait()
             if r != 0:
                 return r
@@ -181,7 +185,7 @@ def merge_conflict_theirs(repo_path, conflict_items, conflict_files):
             obj_id = item["our_obj_id"]
             cf_file = os.path.join(repo_path, filename + ".conflict")
             with open(cf_file, "wb") as f:
-                p = logsubprocess.Popen(["git", "cat-file", "-p", obj_id], stdout=f, env=env, cwd=cwd)
+                p = subprocess.Popen(["git", "cat-file", "-p", obj_id], stdout=f, env=env, cwd=cwd)
                 r = p.wait()
                 if r != 0:
                     print("cat file err:", r)
@@ -275,11 +279,15 @@ def generate_conflicted_filename(filename):
 
 
 class Sync(object):
-    def __init__(self, repos, event_q):
+    def __init__(self, repos, event_q, interval):
         self.last_sync_time = 0
         self.is_syncing = False
         self.repos = repos
         self.event_q = event_q
+        self.sync_interval = interval
+
+    def set_interval(self, interval):
+        self.sync_interval = interval
 
     def sync_repos(self, repos, workspace):
         if not repos:
@@ -349,8 +357,11 @@ class Sync(object):
         self.sync_repos(self.repos, workspace)
         while True:
             try:
-                print("run wait...")
-                item = q.get(timeout=SYNC_INTERVAL)
+                print("run wait:", self.sync_interval)
+                item = q.get(timeout=self.sync_interval)
+                print("get item:", item)
+                if item is WAKEUP:
+                    continue
                 r = self.handle_item(item)
                 if not r:
                     #remove repo or unchanged
@@ -371,9 +382,7 @@ def set_env_path(path):
     env = os.environ.copy()
     env["PATH"] = path
 
-def set_sync_interval(interval):
-    global SYNC_INTERVAL
-    SYNC_INTERVAL = interval
+
 
 if __name__ == "__main__":
     print(sys.argv)

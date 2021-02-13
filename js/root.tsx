@@ -1,6 +1,7 @@
-import  React from 'react';
+import React, { useState, useEffect } from 'react';
 import styles from './root.less';
 import Modal from 'react-modal';
+
 
 interface Repository {
     name:string;//名字要唯一,同时也是clone的本地路径名
@@ -19,7 +20,9 @@ interface Props {
 
 interface Stat {
     repositories:Repository[];
+    setting:any;
     modalIsOpen:boolean;
+    settingIsOpen:boolean;
 }
 
 declare global {
@@ -91,15 +94,88 @@ var formatTime = (function() {
     };
 })();
 
+function Setting(props) {
+    const [interval, setInterval] = useState(props.setting.interval);
+    var onCancel = function() {
+        props.onCancel();
+    }
 
+    var onOk = function() {
+        var setting = Object.assign({}, props.setting, {interval:interval});
+        props.onApply(setting);
+    }
+
+    var onChange = function(event) {
+        var v = event.currentTarget.value;
+        try {
+            var value = parseInt(v);
+        } catch (e) {
+            return;
+        }
+        setInterval(value);
+    }
+
+    var changed = (interval!=props.setting.interval);
+    return (
+        <Modal
+            isOpen={props.isOpen}>
+            <div className={styles["setting-content"]}>
+                <h2>设置</h2>
+                <div className={styles["item"]}>
+                    <span className={styles["label"]}>同步间隔, 单位秒</span>
+                    <input className={styles["value"]} value={interval} onChange={onChange} />
+                </div>
+
+                <div className={styles["item"]}>
+                    <span className={styles["label"]}>仓库路径:</span>
+                    <div className={styles["value"]}>{props.setting.workspace}</div>
+                </div>
+       
+                <div className={styles["bottom"]}>
+                    <button onClick={onCancel}>取消</button>
+                    <button disabled={!changed} onClick={onOk}>应用</button>
+                </div>
+            </div>
+        </Modal>
+    )
+
+}
+
+function Add(props) {
+    const [repoUrl, setRepoUrl] = useState("");
+    var onCancel = function() {
+        props.onCancel();
+    }
+
+    var onOk = function() {
+        props.onAdd(repoUrl);
+    }
+
+    var onChange = function(event) {
+        setRepoUrl(event.currentTarget.value);
+    }
+
+    return (
+        <Modal
+            isOpen={props.isOpen}>
+            <div className={styles["modal-content"]}>
+                <h2>新仓库</h2>
+                <input value={repoUrl} onChange={onChange} placeholder={"仓库URL"} />
+                <div className={styles["bottom"]}>
+                    <button onClick={onCancel}>取消</button>
+                    <button onClick={onOk}>确定</button>
+                </div>
+            </div>
+        </Modal>
+    )
+}
 
 const Checkbox = props => (
     <input type="checkbox" {...props} />
-  )
+)
 
 export class Root extends React.Component<Props, Stat> {
     input:React.RefObject<HTMLInputElement>;
-    finished:boolean;
     timer?:number;
 
     constructor(props) {
@@ -109,33 +185,35 @@ export class Root extends React.Component<Props, Stat> {
 
         this.state = {
             repositories:[], 
-            modalIsOpen:false
+            setting:undefined,
+            modalIsOpen:false,
+            settingIsOpen:false
         };
 
-        this.finished = false;
         this.onSync = this.onSync.bind(this);
+        this.onDelete = this.onDelete.bind(this);
         this.onCheckboxChange = this.onCheckboxChange.bind(this);
         this.onAdd = this.onAdd.bind(this);
+        this.onSetting = this.onSetting.bind(this);
+
         this.onApiReady = this.onApiReady.bind(this);
+
         this.onCloseModal = this.onCloseModal.bind(this);
-        this.onOk = this.onOk.bind(this);
-        this.refreshState = this.refreshState.bind(this);
+        this.onAddRepo = this.onAddRepo.bind(this);
+
+        this.onCloseSetting = this.onCloseSetting.bind(this);
+        this.onApplySetting = this.onApplySetting.bind(this);
+
     }
 
     componentDidMount() {
         window.addEventListener('pywebviewready', this.onApiReady);
-        this.timer = setInterval(this.refreshState, 20*1000);
     }
 
     componentWillUnmount() {
         window.removeEventListener('pywebviewready',  this.onApiReady);
-        clearInterval(this.timer);
-        this.finished = true;
     }
-    
-    refreshState() {
-        this.setState({});
-    }
+  
 
     onApiReady() {
         window.pywebview.api.get_repos()
@@ -143,6 +221,11 @@ export class Root extends React.Component<Props, Stat> {
                 console.log("repos:", repos);
                 this.setState({repositories:repos});
             })
+        window.pywebview.api.get_setting()
+            .then((setting) => {
+                console.log("setting:", setting);
+                this.setState({setting:setting});
+            });
     }
 
     updateRepoState(repoName, lastSyncTime, syncing, syncResult) {
@@ -165,8 +248,11 @@ export class Root extends React.Component<Props, Stat> {
         this.setState({modalIsOpen:false});
     }
 
-    onOk() {
-        var repo_url = this.input.current?.value;
+    onCloseSetting() {
+        this.setState({settingIsOpen:false});
+    }
+
+    onAddRepo(repo_url) {
         if (!repo_url) {
             return;
         }
@@ -204,8 +290,28 @@ export class Root extends React.Component<Props, Stat> {
             });
     }
 
+    onApplySetting(setting) {
+        if (setting.interval < 10) {
+            alert("同步间隔不能小于10秒")
+            return
+        }
+        window.pywebview.api.set_interval(setting.interval)
+            .then((r) => {
+                if (r) {
+                    this.setState({setting:setting, settingIsOpen:false});
+                } else {
+                    console.log("setting fail");
+                    alert("设置同步间隔失败");
+                }
+            });
+    }
+
     onAdd() {
         this.setState({modalIsOpen:true});
+    }
+
+    onSetting() {
+        this.setState({settingIsOpen:true});
     }
 
     onCheckboxChange(e) {
@@ -233,11 +339,25 @@ export class Root extends React.Component<Props, Stat> {
     onSync(e) {
         var name = e.target.dataset.name;
         console.log("sync repo:", name);
-        window.pywebview.api.sync_repo(name)
-
+        window.pywebview.api.sync_repo(name);
     }
 
-    
+    onDelete(e) {
+        var name = e.target.dataset.name;
+        console.log("del repo:", name);
+        window.pywebview.api.delete_repo(name);
+        var repos = this.state.repositories;
+        var index = repos.findIndex((repo) => {
+            return repo.name == name;
+        });
+        if (index == -1) {
+            console.log("can't find repo:", name);
+            return;
+        }
+        this.state.repositories.splice(index, 1);
+        this.setState({});
+    }
+
     render() {
         var nodes: any[]= [];
         var repos = this.state.repositories;
@@ -255,13 +375,12 @@ export class Root extends React.Component<Props, Stat> {
                 status = "";
             }
             nodes.push((
-                <div  key={repo.name} className={styles["repo"]}>
+                <div key={repo.name} className={styles["repo"]}>
                     <div className={styles["title"]}>
                         <div className={styles["name"]}>{repo.name}</div>
-                        <button  onClick={this.onSync} data-name={repo.name}>同步仓库</button>
+                        <div>{status}</div>
                     </div>
                     <div className={styles["content"]}>
-                        <div>{status}</div>
                         <label>
                             <Checkbox
                                 data-name={repo.name}
@@ -270,6 +389,10 @@ export class Root extends React.Component<Props, Stat> {
                                 />
                           <span>自动同步</span>
                         </label>
+                        <div>
+                            <button  onClick={this.onSync} data-name={repo.name}>同步仓库</button>
+                            <button  onClick={this.onDelete} data-name={repo.name}>移除仓库</button>
+                        </div>
                     </div>
                     <div className={styles["line"]}></div>
                 </div>
@@ -279,21 +402,16 @@ export class Root extends React.Component<Props, Stat> {
         
         return (
             <div>
-                <Modal
-                    isOpen={modalIsOpen}>
-                    <div className={styles["modal-content"]}>
-                        <h2>新仓库</h2>
-                        <input ref={this.input} placeholder={"仓库URL"}/>
-                        <div className={styles["bottom"]}>
-                            <button onClick={this.onCloseModal}>取消</button>
-                            <button onClick={this.onOk}>确定</button>
-                        </div>
-                    </div>
-                </Modal>
-
+                <Add isOpen={modalIsOpen} onAdd={this.onAddRepo} onCancel={this.onCloseModal}></Add>
+                {this.state.setting ? <Setting isOpen={this.state.settingIsOpen} setting={this.state.setting} 
+                    onApply={this.onApplySetting} 
+                    onCancel={this.onCloseSetting}></Setting> : null}
                 <div className={styles["header"]}>
                     <div>我的仓库</div>
-                    <div onClick={this.onAdd}>添加</div>
+                    <div className={styles["menu"]}>
+                        <div onClick={this.onAdd}>添加</div>
+                        <div className={styles["setting"]} onClick={this.onSetting}>设置</div>
+                    </div>
                 </div>
                 {nodes}
             </div>

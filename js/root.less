@@ -4,6 +4,16 @@
     justify-content: space-between;
     margin-bottom: 24px;
     font-size: large;
+
+    .menu {
+        display: flex;
+        flex-direction: row;
+
+        .setting {
+            margin-right: 2px;
+            margin-left: 8px;
+        }
+    }
 }
 
 .repo {
@@ -14,7 +24,9 @@
         flex-direction: row;
         justify-content: space-between;
         margin-bottom: 8px;
-        font-size: 24px;
+        .name {
+            font-size: 24px;
+        }
     }
     .content {
         display: flex;
@@ -32,10 +44,6 @@
 
 
 .modal-content {
-
-
-
-
     input {
         margin-top:32px;
         width: 100%;
@@ -56,3 +64,39 @@
         }
     }
 }
+
+
+
+.setting-content {
+
+    .item {
+        margin-top:4px;
+        .label {
+            color:gray;
+            font-size: 16px;
+            margin-right: 4px;
+            margin-bottom: 2px;
+        }
+
+        input {
+            width: 100%;
+            padding-top:4px;
+            padding-bottom: 4px;
+        }
+    }
+   
+
+    .bottom {
+        margin-top:280px;
+        width: 100%;
+        font-size: 32px;
+        display:flex;
+        flex-direction: row;
+        justify-content: space-around;
+    
+        button {
+            font-size: 32px;
+        }
+    }
+}
+
