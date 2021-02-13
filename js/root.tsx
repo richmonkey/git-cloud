@@ -13,17 +13,6 @@ interface Repository {
     syncResult?:boolean;
 }
 
-interface Props {
-
-}
-
-
-interface Stat {
-    repositories:Repository[];
-    setting:any;
-    modalIsOpen:boolean;
-    settingIsOpen:boolean;
-}
 
 declare global {
     interface Window { pywebview: any; }
@@ -94,10 +83,20 @@ var formatTime = (function() {
     };
 })();
 
+function DisabledSetting() {
+    return (
+        <div>
+            <div className={styles["setting"]}>设置</div>
+        </div>
+    );
+}
 function Setting(props) {
+    const [isOpen, setIsOpen] = useState(false);
     const [interval, setInterval] = useState(props.setting.interval);
+
+
     var onCancel = function() {
-        props.onCancel();
+        setIsOpen(false);
     }
 
     var onOk = function() {
@@ -105,7 +104,12 @@ function Setting(props) {
         if (isNaN(interval)) {
             return;
         }
-        props.onApply(setting);
+        props.onApply(setting)
+            .then((r) => {
+                if (r) {
+                    setIsOpen(false);
+                }
+            });
     }
 
     var onChange = function(event) {
@@ -114,64 +118,94 @@ function Setting(props) {
         setInterval(value);
     }
 
+    var onSetting = function() {
+        setIsOpen(true);
+    }
+
     var changed = (interval!=props.setting.interval);
     return (
-        <Modal
-            isOpen={props.isOpen}>
-            <div className={styles["setting-content"]}>
-                <h2>设置</h2>
-                <div className={styles["item"]}>
-                    <span className={styles["label"]}>同步间隔, 单位秒</span>
-                    <input className={styles["value"]} value={isNaN(interval) ? "" : interval} onChange={onChange} />
-                </div>
+        <div>
+            <div className={styles["setting"]} onClick={onSetting}>设置</div>
+            <Modal
+                isOpen={isOpen}>
+                <div className={styles["setting-content"]}>
+                    <h2>设置</h2>
+                    <div className={styles["item"]}>
+                        <span className={styles["label"]}>同步间隔, 单位秒</span>
+                        <input className={styles["value"]} value={isNaN(interval) ? "" : interval} onChange={onChange} />
+                    </div>
 
-                <div className={styles["item"]}>
-                    <span className={styles["label"]}>仓库路径:</span>
-                    <div className={styles["value"]}>{props.setting.workspace}</div>
+                    <div className={styles["item"]}>
+                        <span className={styles["label"]}>仓库路径:</span>
+                        <div className={styles["value"]}>{props.setting.workspace}</div>
+                    </div>
+        
+                    <div className={styles["bottom"]}>
+                        <button onClick={onCancel}>取消</button>
+                        <button disabled={!changed} onClick={onOk}>应用</button>
+                    </div>
                 </div>
-       
-                <div className={styles["bottom"]}>
-                    <button onClick={onCancel}>取消</button>
-                    <button disabled={!changed} onClick={onOk}>应用</button>
-                </div>
-            </div>
-        </Modal>
-    )
-
+            </Modal>
+        </div>
+    );
 }
 
 function Add(props) {
+    const [isOpen, setIsOpen] = useState(false);
     const [repoUrl, setRepoUrl] = useState("");
     var onCancel = function() {
-        props.onCancel();
+        setIsOpen(false);
     }
 
     var onOk = function() {
-        props.onAdd(repoUrl);
+        props.onAdd(repoUrl)
+            .then((r) => {
+                if (r) {
+                    setIsOpen(false);
+                    setRepoUrl("");
+                }
+            });
     }
 
     var onChange = function(event) {
         setRepoUrl(event.currentTarget.value);
     }
 
+    var onAdd = function() {
+        setIsOpen(true);
+    }
     return (
-        <Modal
-            isOpen={props.isOpen}>
-            <div className={styles["modal-content"]}>
-                <h2>新仓库</h2>
-                <input value={repoUrl} onChange={onChange} placeholder={"仓库URL"} />
-                <div className={styles["bottom"]}>
-                    <button onClick={onCancel}>取消</button>
-                    <button onClick={onOk}>确定</button>
+        <div>
+            <div onClick={onAdd}>添加</div>
+            <Modal
+                isOpen={isOpen}>
+                <div className={styles["modal-content"]}>
+                    <h2>新仓库</h2>
+                    <input value={repoUrl} onChange={onChange} placeholder={"仓库URL"} />
+                    <div className={styles["bottom"]}>
+                        <button onClick={onCancel}>取消</button>
+                        <button onClick={onOk}>确定</button>
+                    </div>
                 </div>
-            </div>
-        </Modal>
-    )
+            </Modal>
+        </div>
+    );
 }
 
 const Checkbox = props => (
     <input type="checkbox" {...props} />
 )
+
+
+interface Props {
+
+}
+
+
+interface Stat {
+    repositories:Repository[];
+    setting:any;
+}
 
 export class Root extends React.Component<Props, Stat> {
     input:React.RefObject<HTMLInputElement>;
@@ -185,25 +219,17 @@ export class Root extends React.Component<Props, Stat> {
         this.state = {
             repositories:[], 
             setting:undefined,
-            modalIsOpen:false,
-            settingIsOpen:false
         };
 
         this.onSync = this.onSync.bind(this);
         this.onDelete = this.onDelete.bind(this);
         this.onCheckboxChange = this.onCheckboxChange.bind(this);
-        this.onAdd = this.onAdd.bind(this);
-        this.onSetting = this.onSetting.bind(this);
 
         this.refreshState = this.refreshState.bind(this);
         this.onApiReady = this.onApiReady.bind(this);
 
-        this.onCloseModal = this.onCloseModal.bind(this);
         this.onAddRepo = this.onAddRepo.bind(this);
-
-        this.onCloseSetting = this.onCloseSetting.bind(this);
         this.onApplySetting = this.onApplySetting.bind(this);
-
     }
 
     componentDidMount() {
@@ -248,31 +274,24 @@ export class Root extends React.Component<Props, Stat> {
         repo.syncing = syncing;
         this.setState({});
     }
-  
-
-    onCloseModal() {
-        this.setState({modalIsOpen:false});
-    }
-
-    onCloseSetting() {
-        this.setState({settingIsOpen:false});
-    }
+ 
 
     onAddRepo(repo_url) {
+        var p = Promise.resolve(false);
         if (!repo_url) {
-            return;
+            return p;
         }
         var pos = repo_url.lastIndexOf("/");
         if (pos == -1) {
-            return;
+            return p;
         }
         var filename = repo_url.substring(pos + 1);
         if (!filename) {
-            return;
+            return p;
         }
         var name = filename.split(".")[0];
         if (!name) {
-            return;
+            return p;
         }
         console.log("repo url:", repo_url, " name:", name);
         var r = this.state.repositories.find((repo) => {
@@ -280,45 +299,40 @@ export class Root extends React.Component<Props, Stat> {
         })
         if (r) {
             alert("仓库名重复");
-            return;
+            return p;
         }
 
         var repo:Repository = {name:name, url:repo_url, disabled:false, rdonly:false};
-        window.pywebview.api.add_repo(name, repo_url)
+        return window.pywebview.api.add_repo(name, repo_url)
             .then((r) => {
                 if (r) {
                     this.state.repositories.push(repo);
-                    this.setState({modalIsOpen:false});
+                    this.setState({});
                 } else {
                     console.log("add fail");
                     alert("仓库添加失败");
                 }
+                return r;
             });
     }
 
     onApplySetting(setting) {
         if (setting.interval < 10) {
             alert("同步间隔不能小于10秒")
-            return
+            return Promise.resolve(false);
         }
-        window.pywebview.api.set_interval(setting.interval)
+        return window.pywebview.api.set_interval(setting.interval)
             .then((r) => {
                 if (r) {
-                    this.setState({setting:setting, settingIsOpen:false});
+                    this.setState({ setting: setting });
                 } else {
                     console.log("setting fail");
                     alert("设置同步间隔失败");
                 }
+                return r;
             });
     }
 
-    onAdd() {
-        this.setState({modalIsOpen:true});
-    }
-
-    onSetting() {
-        this.setState({settingIsOpen:true});
-    }
 
     onCheckboxChange(e) {
         var name = e.target.dataset.name;
@@ -404,19 +418,17 @@ export class Root extends React.Component<Props, Stat> {
                 </div>
             ));
         });
-        var modalIsOpen = this.state.modalIsOpen;
-        
         return (
             <div>
-                <Add isOpen={modalIsOpen} onAdd={this.onAddRepo} onCancel={this.onCloseModal}></Add>
-                {this.state.setting ? <Setting isOpen={this.state.settingIsOpen} setting={this.state.setting} 
-                    onApply={this.onApplySetting} 
-                    onCancel={this.onCloseSetting}></Setting> : null}
                 <div className={styles["header"]}>
                     <div>我的仓库</div>
                     <div className={styles["menu"]}>
-                        <div onClick={this.onAdd}>添加</div>
-                        <div className={styles["setting"]} onClick={this.onSetting}>设置</div>
+                        <Add onAdd={this.onAddRepo}></Add>
+                        {
+                            this.state.setting ?
+                                <Setting setting={this.state.setting} onApply={this.onApplySetting} /> :
+                                <DisabledSetting />
+                        }
                     </div>
                 </div>
                 {nodes}
